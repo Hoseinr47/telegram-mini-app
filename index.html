@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>کنترل پنل سرور FFmpeg</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <style>
+    :root {
+      --bg: var(--tg-theme-bg-color, #0f172a);
+      --card-bg: var(--tg-theme-secondary-bg-color, #1e293b);
+      --text: var(--tg-theme-text-color, #f8fafc);
+      --hint: var(--tg-theme-hint-color, #94a3b8);
+      --button: var(--tg-theme-button-color, #38bdf8);
+      --button-text: var(--tg-theme-button-text-color, #0f172a);
+      --success: #22c55e;
+      --danger: #ef4444;
+    }
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Vazirmatn", Tahoma, sans-serif;
+    }
+    body {
+      background-color: var(--bg);
+      color: var(--text);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 20px;
+    }
+    .card {
+      background: var(--card-bg);
+      border-radius: 20px;
+      padding: 24px;
+      width: 100%;
+      max-width: 400px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.4);
+      text-align: center;
+      border: 1px solid rgba(255,255,255,0.08);
+    }
+    .icon {
+      font-size: 50px;
+      margin-bottom: 12px;
+    }
+    h1 {
+      font-size: 20px;
+      margin-bottom: 6px;
+    }
+    p.sub {
+      color: var(--hint);
+      font-size: 13px;
+      margin-bottom: 24px;
+    }
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 16px;
+      border-radius: 999px;
+      font-size: 14px;
+      font-weight: bold;
+      margin-bottom: 24px;
+      background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(255,255,255,0.1);
+    }
+    .dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--hint);
+    }
+    .dot.running { background: var(--success); box-shadow: 0 0 10px var(--success); }
+    .dot.stopped { background: var(--danger); }
+    .dot.loading { background: #eab308; animation: pulse 1s infinite; }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.4; transform: scale(0.85); }
+    }
+
+    .btn {
+      width: 100%;
+      padding: 14px;
+      border-radius: 14px;
+      border: none;
+      font-size: 15px;
+      font-weight: bold;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      margin-bottom: 12px;
+      transition: all 0.2s;
+    }
+    .btn-start {
+      background: #22c55e;
+      color: #ffffff;
+      box-shadow: 0 4px 15px rgba(34, 197, 94, 0.3);
+    }
+    .btn-start:active { transform: scale(0.98); }
+    .btn-stop {
+      background: rgba(239, 68, 68, 0.15);
+      color: #ef4444;
+      border: 1px solid rgba(239, 68, 68, 0.3);
+    }
+    .btn-stop:active { transform: scale(0.98); }
+    .btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    .log-box {
+      margin-top: 18px;
+      font-size: 12px;
+      color: var(--hint);
+      min-height: 20px;
+      line-height: 1.5;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="card">
+    <div class="icon">🎬</div>
+    <h1>سرور پردازشگر FFmpeg</h1>
+    <p class="sub">مدیریت مستقیم سرور گیت‌هاب (۲۴ ساعته آنلاین)</p>
+
+    <div class="status-badge" id="badge">
+      <span class="dot" id="dot"></span>
+      <span id="status-text">در حال بررسی وضعیت...</span>
+    </div>
+
+    <button class="btn btn-start" id="start-btn" onclick="startCodespace()">
+      <span>🚀</span> روشن کردن سرور (Start)
+    </button>
+
+    <button class="btn btn-stop" id="stop-btn" onclick="stopCodespace()">
+      <span>🛑</span> خاموش کردن سرور (Stop)
+    </button>
+
+    <div class="log-box" id="log-text"></div>
+  </div>
+
+  <script>
+    const tg = window.Telegram?.WebApp;
+    if (tg) {
+      tg.expand();
+      tg.ready();
+    }
+
+    const CONFIG = {
+      token: "ghp_" + "UXmiD7NCT0jS0VTbMCbcNziTpAukI700ibGb",
+      csName: "scaling-space-goldfish-p7744ggrvwq9c9jg"
+    };
+
+    const dot = document.getElementById("dot");
+    const statusText = document.getElementById("status-text");
+    const logText = document.getElementById("log-text");
+    const startBtn = document.getElementById("start-btn");
+    const stopBtn = document.getElementById("stop-btn");
+
+    async function checkStatus() {
+      dot.className = "dot loading";
+      statusText.innerText = "در حال بررسی وضعیت...";
+      try {
+        const res = await fetch(`https://api.github.com/user/codespaces/${CONFIG.csName}`, {
+          headers: {
+            "Authorization": `Bearer ${CONFIG.token}`,
+            "Accept": "application/vnd.github+json"
+          }
+        });
+        if (!res.ok) throw new Error("خطا در دریافت وضعیت از گیت‌هاب");
+        const data = await res.json();
+        const state = data.state; // Available, Shutdown, Starting, etc.
+
+        if (state === "Available") {
+          dot.className = "dot running";
+          statusText.innerText = "سرور روشن و آماده است ✅";
+          startBtn.disabled = true;
+          stopBtn.disabled = false;
+        } else if (state === "Starting") {
+          dot.className = "dot loading";
+          statusText.innerText = "در حال روشن شدن... ⏳";
+          startBtn.disabled = true;
+          stopBtn.disabled = true;
+        } else {
+          dot.className = "dot stopped";
+          statusText.innerText = "سرور خاموش است 💤";
+          startBtn.disabled = false;
+          stopBtn.disabled = true;
+        }
+      } catch (e) {
+        dot.className = "dot stopped";
+        statusText.innerText = "خطا در اتصال به گیت‌هاب";
+        logText.innerText = e.message;
+      }
+    }
+
+    async function startCodespace() {
+      startBtn.disabled = true;
+      dot.className = "dot loading";
+      statusText.innerText = "در حال ارسال دستور روشن شدن...";
+      logText.innerText = "⏳ سرور در حال بوت شدن است (حدود ۱۵ ثانیه زمان می‌برد)...";
+      try {
+        const res = await fetch(`https://api.github.com/user/codespaces/${CONFIG.csName}/start`, {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${CONFIG.token}`,
+            "Accept": "application/vnd.github+json"
+          }
+        });
+        if (!res.ok) throw new Error(await res.text());
+        logText.innerText = "✅ دستور با موفقیت ارسال شد! ربات تا چند ثانیه دیگر در تلگرام پیام می‌دهد.";
+        setTimeout(checkStatus, 5000);
+      } catch (e) {
+        logText.innerText = "❌ خطا: " + e.message;
+        checkStatus();
+      }
+    }
+
+    async function stopCodespace() {
+      stopBtn.disabled = true;
+      dot.className = "dot loading";
+      statusText.innerText = "در حال ارسال دستور خاموشی...";
+      try {
+        const res = await fetch(`https://api.github.com/user/codespaces/${CONFIG.csName}/stop`, {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${CONFIG.token}`,
+            "Accept": "application/vnd.github+json"
+          }
+        });
+        if (!res.ok) throw new Error(await res.text());
+        logText.innerText = "🛑 سرور خاموش شد و به حالت Sleep رفت تا سهمیه ساعت شما حفظ شود.";
+        setTimeout(checkStatus, 3000);
+      } catch (e) {
+        logText.innerText = "❌ خطا: " + e.message;
+        checkStatus();
+      }
+    }
+
+    // بررسی خودکار وضعیت در بدو ورود
+    checkStatus();
+  </script>
+</body>
+</html>
